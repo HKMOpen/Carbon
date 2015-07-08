@@ -4,7 +4,7 @@ import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.view.View;
 
-import carbon.widget.TransitionLayout;
+import carbon.beta.TransitionLayout;
 import tk.zielony.carbonsamples.R;
 
 /**
@@ -24,7 +24,7 @@ public class RadialTransitionActivity extends FragmentActivity {
             @Override
             public void onClick(View v) {
                 transitionView.setHotspot(v);
-                transitionView.startTransition(TransitionLayout.TransitionType.Radial, Math.random() > 0.5f);
+                transitionView.startTransition((transitionView.getCurrentChild() + 1) % transitionView.getChildCount(), TransitionLayout.TransitionType.Radial, TransitionLayout.DEFAULT_DURATION, Math.random() > 0.5f);
             }
         });
     }

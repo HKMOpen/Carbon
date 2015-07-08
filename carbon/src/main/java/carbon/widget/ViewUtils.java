@@ -1,14 +1,8 @@
 package carbon.widget;
 
-import android.content.Context;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-import android.content.res.TypedArray;
 import android.graphics.drawable.ColorDrawable;
 
 import java.lang.reflect.Field;
-
-import carbon.R;
 
 /**
  * Created by Marcin on 2014-12-10.
@@ -31,18 +25,4 @@ public class ViewUtils {
         return color;
     }
 
-    public static int getPrimaryColor(Context context) {
-        int color = 0;
-        try {
-            String packageName = context.getPackageName();
-            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, PackageManager.GET_META_DATA);
-            int theme = packageInfo.applicationInfo.theme;
-
-            TypedArray a = context.getTheme().obtainStyledAttributes(theme, R.styleable.Carbon);
-            color = a.getColor(R.styleable.Carbon_carbon_colorPrimary, 0);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return color;
-    }
 }

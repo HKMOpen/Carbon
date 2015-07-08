@@ -1,8 +1,10 @@
 package tk.zielony.carbonsamples.animation;
 
+import android.content.Intent;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.BaseAdapter;
 import android.widget.TextView;
 
 import tk.zielony.carbonsamples.R;
@@ -10,7 +12,7 @@ import tk.zielony.carbonsamples.R;
 /**
  * Created by Marcin on 2014-12-15.
  */
-class ListRippleAdapter extends BaseAdapter {
+class ListRippleAdapter extends RecyclerView.Adapter<ListRippleAdapter.ViewHolder> {
     private final String[] items;
 
     public ListRippleAdapter(String[] items) {
@@ -18,13 +20,13 @@ class ListRippleAdapter extends BaseAdapter {
     }
 
     @Override
-    public int getCount() {
-        return items.length;
+    public ListRippleAdapter.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.row_ripple, parent, false));
     }
 
     @Override
-    public Object getItem(int position) {
-        return items[position];
+    public void onBindViewHolder(ListRippleAdapter.ViewHolder holder, final int position) {
+        holder.textView.setText(items[position]);
     }
 
     @Override
@@ -33,15 +35,16 @@ class ListRippleAdapter extends BaseAdapter {
     }
 
     @Override
-    public View getView(int position, View convertView, ViewGroup parent) {
-        View view;
-        if (convertView != null) {
-            view = convertView;
-        } else {
-            view = View.inflate(parent.getContext(), R.layout.row_ripple, null);
+    public int getItemCount() {
+        return items.length;
+    }
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+        TextView textView;
+
+        public ViewHolder(View view) {
+            super(view);
+            textView = (TextView) view.findViewById(R.id.text);
         }
-        TextView textView = (TextView) view.findViewById(R.id.text);
-        textView.setText(items[position]);
-        return view;
     }
 }

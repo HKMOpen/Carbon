@@ -1,46 +1,56 @@
 package carbon.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
+import android.os.Parcel;
+import android.os.Parcelable;
+import android.support.annotation.NonNull;
 import android.support.v4.view.PagerAdapter;
 import android.util.AttributeSet;
+import android.util.SparseArray;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
 
 import com.nineoldandroids.animation.ValueAnimator;
+import com.nineoldandroids.view.ViewHelper;
 
+import carbon.Carbon;
 import carbon.R;
 
 /**
  * Created by Marcin on 2015-02-26.
  */
-public class PagerTabStrip extends HorizontalScrollView {
+public class PagerTabStrip extends android.widget.HorizontalScrollView implements TintedView {
     ViewPager viewPager;
-    private int tabResId = R.layout.carbon_tab;
     private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     LinearLayout content;
     private float indicatorPos = 0;
     private int selectedPage = 0;
     private float indicatorPos2 = 0;
     float indicatorHeight;
-    int indicatorColor = Color.RED;
     DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator();
     boolean fixed = false;
+
+    private ValueAnimator animator, animator2;
 
     private ViewPager.OnPageChangeListener pageChangeListener = new ViewPager.OnPageChangeListener() {
         @Override
         public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
             position = (int) Math.round(position + positionOffset);
             if (position != selectedPage) {
-                ValueAnimator.clearAllAnimations();
                 View view = content.getChildAt(position);
 
-                ValueAnimator animator = ValueAnimator.ofFloat(indicatorPos, view.getLeft());
+                if (animator != null)
+                    animator.cancel();
+                if (animator2 != null)
+                    animator2.cancel();
+
+                animator = ValueAnimator.ofFloat(indicatorPos, view.getLeft());
                 animator.setDuration(200);
                 if (position > selectedPage)
                     animator.setStartDelay(100);
@@ -54,7 +64,7 @@ public class PagerTabStrip extends HorizontalScrollView {
                 });
                 animator.start();
 
-                ValueAnimator animator2 = ValueAnimator.ofFloat(indicatorPos2, view.getRight());
+                animator2 = ValueAnimator.ofFloat(indicatorPos2, view.getRight());
                 animator2.setDuration(200);
                 if (position < selectedPage)
                     animator2.setStartDelay(100);
@@ -68,9 +78,7 @@ public class PagerTabStrip extends HorizontalScrollView {
                 });
                 animator2.start();
 
-                content.getChildAt(selectedPage).findViewById(R.id.carbon_tabText).setSelected(false);
-                selectedPage = position;
-                content.getChildAt(selectedPage).findViewById(R.id.carbon_tabText).setSelected(true);
+                setSelectedPage(position);
 
                 if (content.getChildAt(selectedPage).getLeft() - getScrollX() < 0) {
                     smoothScrollTo(content.getChildAt(selectedPage).getLeft(), 0);
@@ -89,8 +97,10 @@ public class PagerTabStrip extends HorizontalScrollView {
         }
     };
 
+    private TabBuilder tabBuilder;
+
     public PagerTabStrip(Context context) {
-        this(context,null);
+        this(context, null);
     }
 
     public PagerTabStrip(Context context, AttributeSet attrs) {
@@ -105,14 +115,10 @@ public class PagerTabStrip extends HorizontalScrollView {
     private void init(AttributeSet attrs, int defStyleAttr) {
         TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.PagerTabStrip, defStyleAttr, 0);
 
-        setIndicatorColor(a.getColor(R.styleable.PagerTabStrip_carbon_indicatorColor, 0));
         setIndicatorHeight(a.getDimension(R.styleable.PagerTabStrip_carbon_indicatorWidth, 2));
-        setTabResource(a.getResourceId(R.styleable.PagerTabStrip_carbon_tab, R.layout.carbon_tab));
+        setFixed(a.getBoolean(R.styleable.PagerTabStrip_carbon_fixedTabs, true));
 
         a.recycle();
-
-        if (fixed)
-            setFillViewport(true);
 
         setHorizontalFadingEdgeEnabled(false);
         setHorizontalScrollBarEnabled(false);
@@ -120,34 +126,43 @@ public class PagerTabStrip extends HorizontalScrollView {
         content = new LinearLayout(getContext());
         addView(content, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
         initTabs();
+
+        Carbon.initTint(this, attrs, defStyleAttr);
     }
 
     public void setViewPager(final ViewPager viewPager) {
         if (viewPager != null)
             viewPager.removeOnPageChangeListener(pageChangeListener);
         this.viewPager = viewPager;
-        viewPager.addOnPageChangeListener(pageChangeListener);
+        if (viewPager != null)
+            viewPager.addOnPageChangeListener(pageChangeListener);
         initTabs();
     }
 
     private void initTabs() {
-        if (content == null)
-            return;
-
         content.removeAllViews();
 
         if (viewPager == null)
             return;
-        PagerAdapter adapter = viewPager.getAdapter();
+        final PagerAdapter adapter = viewPager.getAdapter();
 
-        if (adapter == null || tabResId == 0)
+        if (viewPager.getAdapter() == null)
             return;
 
+        if (tabBuilder == null) {
+            tabBuilder = new TabBuilder() {
+                @Override
+                public View getView(int position) {
+                    View tab = inflate(getContext(), R.layout.carbon_tab, null);
+                    ((TextView) tab.findViewById(R.id.carbon_tabText)).setText(getViewPager().getAdapter().getPageTitle(position).toString().toUpperCase());
+                    return tab;
+                }
+            };
+        }
         for (int i = 0; i < adapter.getCount(); i++) {
-            View tab = inflate(getContext(), tabResId, null);
-            ((TextView) tab.findViewById(R.id.carbon_tabText)).setText(adapter.getPageTitle(i).toString().toUpperCase());
+            View tab = tabBuilder.getView(i);
             content.addView(tab, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-            tab.findViewById(R.id.carbon_tabText).setSelected(i == 0);
+            tab.setSelected(i == 0);
             final int finalI = i;
             tab.setOnClickListener(new OnClickListener() {
                 @Override
@@ -159,25 +174,18 @@ public class PagerTabStrip extends HorizontalScrollView {
     }
 
     @Override
-    public void draw(Canvas canvas) {
+    public void draw(@NonNull Canvas canvas) {
         super.draw(canvas);
+        if (content.getChildCount() == 0)
+            return;
         if (indicatorPos == indicatorPos2)
-            indicatorPos2 = content.getChildAt(0).getWidth();
-        paint.setColor(indicatorColor);
+            indicatorPos2 = content.getChildAt(selectedPage).getWidth();
+        paint.setColor(getTint().getColorForState(getDrawableState(), getTint().getDefaultColor()));
         canvas.drawRect(indicatorPos, getHeight() - indicatorHeight, indicatorPos2, getHeight(), paint);
     }
 
     public ViewPager getViewPager() {
         return viewPager;
-    }
-
-    public int getTabResource() {
-        return tabResId;
-    }
-
-    public void setTabResource(int tabResId) {
-        this.tabResId = tabResId;
-        initTabs();
     }
 
     public boolean isFixed() {
@@ -198,11 +206,138 @@ public class PagerTabStrip extends HorizontalScrollView {
         postInvalidate();
     }
 
-    public int getIndicatorColor() {
-        return indicatorColor;
+    public void setTabBuilder(TabBuilder tabBuilder) {
+        this.tabBuilder = tabBuilder;
+        initTabs();
     }
 
-    public void setIndicatorColor(int indicatorColor) {
-        this.indicatorColor = indicatorColor;
+    public void setSelectedPage(int position) {
+        if (viewPager == null)
+            return;
+        if (content.getChildCount() > selectedPage)
+            content.getChildAt(selectedPage).setSelected(false);
+        selectedPage = position;
+        if (content.getChildCount() > selectedPage)
+            content.getChildAt(selectedPage).setSelected(true);
+    }
+
+    @Override
+    protected Parcelable onSaveInstanceState() {
+        Parcelable superState = super.onSaveInstanceState();
+        return new SavedState(superState, selectedPage, getScrollX(), indicatorPos, indicatorPos2);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Parcelable state) {
+        final SavedState savedState = (SavedState) state;
+        super.onRestoreInstanceState(savedState.getSuperState());
+        setSelectedPage(savedState.getSelectedPage());
+        indicatorPos = savedState.getIndicatorPos();
+        indicatorPos2 = savedState.getIndicatorPos2();
+        post(new Runnable() {
+            public void run() {
+                ViewHelper.setScrollX(PagerTabStrip.this, savedState.getScroll());
+            }
+        });
+    }
+
+    @Override
+    protected void dispatchSaveInstanceState(@NonNull SparseArray<Parcelable> container) {
+        super.dispatchFreezeSelfOnly(container);
+    }
+
+    @Override
+    protected void dispatchRestoreInstanceState(@NonNull SparseArray<Parcelable> container) {
+        super.dispatchThawSelfOnly(container);
+    }
+
+    protected static class SavedState extends BaseSavedState {
+        private final int selectedPage;
+        private final int scroll;
+        private final float indicatorPos;
+        private final float indicatorPos2;
+
+        private SavedState(Parcelable superState, int selectedPage, int scrollX, float indicatorPos, float indicatorPos2) {
+            super(superState);
+            this.selectedPage = selectedPage;
+            this.scroll = scrollX;
+            this.indicatorPos = indicatorPos;
+            this.indicatorPos2 = indicatorPos2;
+        }
+
+        private SavedState(Parcel in) {
+            super(in);
+            selectedPage = in.readInt();
+            scroll = in.readInt();
+            indicatorPos = in.readFloat();
+            indicatorPos2 = in.readFloat();
+        }
+
+        public int getSelectedPage() {
+            return selectedPage;
+        }
+
+        public int getScroll() {
+            return scroll;
+        }
+
+        public float getIndicatorPos() {
+            return indicatorPos;
+        }
+
+        public float getIndicatorPos2() {
+            return indicatorPos2;
+        }
+
+        @Override
+        public void writeToParcel(@NonNull Parcel destination, int flags) {
+            super.writeToParcel(destination, flags);
+            destination.writeInt(selectedPage);
+            destination.writeInt(scroll);
+            destination.writeFloat(indicatorPos);
+            destination.writeFloat(indicatorPos2);
+        }
+
+        public static final Parcelable.Creator<SavedState> CREATOR = new Creator<SavedState>() {
+            public SavedState createFromParcel(Parcel in) {
+                return new SavedState(in);
+            }
+
+            public SavedState[] newArray(int size) {
+                return new SavedState[size];
+            }
+        };
+    }
+
+    @Override
+    public void setOverScrollMode(int mode) {
+        try {
+            super.setOverScrollMode(OVER_SCROLL_NEVER);
+        } catch (Exception e) {
+            // Froyo
+        }
+    }
+
+
+    // -------------------------------
+    // tint
+    // -------------------------------
+
+    ColorStateList tint;
+
+    @Override
+    public void setTint(ColorStateList list) {
+        this.tint = list;
+        postInvalidate();
+    }
+
+    @Override
+    public void setTint(int color) {
+        setTint(ColorStateList.valueOf(color));
+    }
+
+    @Override
+    public ColorStateList getTint() {
+        return tint;
     }
 }

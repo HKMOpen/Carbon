@@ -1,25 +1,28 @@
 package carbon.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
+import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewParent;
 
+import carbon.Carbon;
 import carbon.R;
 import carbon.drawable.EdgeEffect;
+import carbon.drawable.TintPrimaryColorStateList;
 
 /**
  * Created by Marcin on 2015-02-28.
  */
-public class HorizontalScrollView extends android.widget.HorizontalScrollView {
+public class HorizontalScrollView extends android.widget.HorizontalScrollView implements TintedView {
     private final int mTouchSlop;
-    int edgeEffectColor;
-    EdgeEffect edgeEffectLeft;
-    EdgeEffect edgeEffectRight;
+    EdgeEffect leftGlow;
+    EdgeEffect rightGlow;
     private boolean drag = true;
     private float prevX;
     private int overscrollMode;
@@ -40,11 +43,17 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
         super(context, attrs, defStyleAttr);
         final ViewConfiguration configuration = ViewConfiguration.get(getContext());
         mTouchSlop = configuration.getScaledTouchSlop();
-        setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
 
         TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.HorizontalScrollView, defStyleAttr, 0);
-        edgeEffectColor = a.getColor(R.styleable.HorizontalScrollView_carbon_edgeEffectColor, 0);
+        for (int i = 0; i < a.getIndexCount(); i++) {
+            int attr = a.getIndex(i);
+            if (attr == R.styleable.HorizontalScrollView_carbon_overScroll) {
+                setOverScrollMode(a.getInt(attr, OVER_SCROLL_ALWAYS));
+            }
+        }
         a.recycle();
+
+        Carbon.initTint(this, attrs, defStyleAttr);
     }
 
     private int getScrollRange() {
@@ -58,23 +67,23 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
     }
 
     @Override
-    public void draw(Canvas canvas) {
+    public void draw(@NonNull Canvas canvas) {
         super.draw(canvas);
-        if (edgeEffectLeft != null) {
+        if (leftGlow != null) {
             final int scrollX = getScrollX();
-            if (!edgeEffectLeft.isFinished()) {
+            if (!leftGlow.isFinished()) {
                 final int restoreCount = canvas.save();
                 final int height = getHeight() - getPaddingTop() - getPaddingBottom();
 
                 canvas.rotate(270);
                 canvas.translate(-height + getPaddingTop(), Math.min(0, scrollX));
-                edgeEffectLeft.setSize(height, getWidth());
-                if (edgeEffectLeft.draw(canvas)) {
+                leftGlow.setSize(height, getWidth());
+                if (leftGlow.draw(canvas)) {
                     postInvalidate();
                 }
                 canvas.restoreToCount(restoreCount);
             }
-            if (!edgeEffectRight.isFinished()) {
+            if (!rightGlow.isFinished()) {
                 final int restoreCount = canvas.save();
                 final int width = getWidth();
                 final int height = getHeight() - getPaddingTop() - getPaddingBottom();
@@ -82,8 +91,8 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
                 canvas.rotate(90);
                 canvas.translate(-getPaddingTop(),
                         -(Math.max(getScrollRange(), scrollX) + width));
-                edgeEffectRight.setSize(height, width);
-                if (edgeEffectRight.draw(canvas)) {
+                rightGlow.setSize(height, width);
+                if (rightGlow.draw(canvas)) {
                     postInvalidate();
                 }
                 canvas.restoreToCount(restoreCount);
@@ -92,7 +101,7 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
     }
 
     @Override
-    public boolean dispatchTouchEvent(MotionEvent ev) {
+    public boolean dispatchTouchEvent(@NonNull MotionEvent ev) {
         switch (ev.getAction()) {
             case MotionEvent.ACTION_MOVE:
                 float deltaX = prevX - ev.getX();
@@ -118,27 +127,27 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
                     if (canOverscroll) {
                         float pulledToY = oldX + deltaX;
                         if (pulledToY < 0) {
-                            edgeEffectLeft.onPull(deltaX / getWidth(), ev.getY() / getHeight());
-                            if (!edgeEffectRight.isFinished())
-                                edgeEffectRight.onRelease();
+                            leftGlow.onPull(deltaX / getWidth(), 1.f - ev.getY() / getHeight());
+                            if (!rightGlow.isFinished())
+                                rightGlow.onRelease();
                         } else if (pulledToY > range) {
-                            edgeEffectRight.onPull(deltaX / getWidth(), 1.f - ev.getY() / getHeight());
-                            if (!edgeEffectLeft.isFinished())
-                                edgeEffectLeft.onRelease();
+                            rightGlow.onPull(deltaX / getWidth(), ev.getY() / getHeight());
+                            if (!leftGlow.isFinished())
+                                leftGlow.onRelease();
                         }
-                        if (edgeEffectLeft != null && (!edgeEffectLeft.isFinished() || !edgeEffectRight.isFinished()))
+                        if (leftGlow != null && (!leftGlow.isFinished() || !rightGlow.isFinished()))
                             postInvalidate();
                     }
                 }
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                if (drag){
+                if (drag) {
                     drag = false;
 
-                    if (edgeEffectLeft != null) {
-                        edgeEffectLeft.onRelease();
-                        edgeEffectRight.onRelease();
+                    if (leftGlow != null) {
+                        leftGlow.onRelease();
+                        rightGlow.onRelease();
                     }
                 }
                 break;
@@ -151,30 +160,61 @@ public class HorizontalScrollView extends android.widget.HorizontalScrollView {
     @Override
     public void setOverScrollMode(int mode) {
         if (mode != OVER_SCROLL_NEVER) {
-            if (edgeEffectLeft == null) {
+            if (leftGlow == null) {
                 Context context = getContext();
-                edgeEffectLeft = new EdgeEffect(context);
-                edgeEffectLeft.setColor(edgeEffectColor);
-                edgeEffectRight = new EdgeEffect(context);
-                edgeEffectRight.setColor(edgeEffectColor);
+                leftGlow = new EdgeEffect(context);
+                rightGlow = new EdgeEffect(context);
+                updateTint();
             }
         } else {
-            edgeEffectLeft = null;
-            edgeEffectRight = null;
+            leftGlow = null;
+            rightGlow = null;
         }
-        super.setOverScrollMode(OVER_SCROLL_NEVER);
+        try {
+            super.setOverScrollMode(OVER_SCROLL_NEVER);
+        } catch (Exception e) {
+            // Froyo
+        }
         this.overscrollMode = mode;
     }
 
-    public int getEdgeEffectColor() {
-        return edgeEffectColor;
+    @Override
+    protected void drawableStateChanged() {
+        super.drawableStateChanged();
+        updateTint();
     }
 
-    public void setEdgeEffectColor(int edgeEffectColor) {
-        this.edgeEffectColor = edgeEffectColor;
-        if (edgeEffectLeft != null)
-            edgeEffectLeft.setColor(edgeEffectColor);
-        if (edgeEffectRight != null)
-            edgeEffectRight.setColor(edgeEffectColor);
+
+    // -------------------------------
+    // tint
+    // -------------------------------
+
+    ColorStateList tint;
+
+    @Override
+    public void setTint(ColorStateList list) {
+        this.tint = list;
+        updateTint();
+    }
+
+    @Override
+    public void setTint(int color) {
+        setTint(ColorStateList.valueOf(color));
+    }
+
+    @Override
+    public ColorStateList getTint() {
+        return tint;
+    }
+
+    private void updateTint() {
+        if (tint == null)
+            tint = new TintPrimaryColorStateList(getContext());
+        int color = tint.getColorForState(getDrawableState(), tint.getDefaultColor());
+        if (leftGlow != null)
+            leftGlow.setColor(color);
+        if (rightGlow != null)
+            rightGlow.setColor(color);
+        postInvalidate();
     }
 }

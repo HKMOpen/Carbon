@@ -3,8 +3,8 @@ package carbon.shadow;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.LightingColorFilter;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.support.v8.renderscript.Allocation;
 import android.support.v8.renderscript.Element;
 import android.support.v8.renderscript.RSRuntimeException;
@@ -12,16 +12,20 @@ import android.support.v8.renderscript.RenderScript;
 import android.support.v8.renderscript.ScriptIntrinsicBlur;
 import android.view.View;
 
+import carbon.R;
+import carbon.widget.CornerView;
+
 public class ShadowGenerator {
-    public static final float SHADOW_SCALE = 2.0f;
+    public static final int ALPHA = 51;
 
     private static RenderScript renderScript;
     private static ScriptIntrinsicBlur blurShader;
     private static Paint paint = new Paint();
-    private static LightingColorFilter lightingColorFilter = new LightingColorFilter(0, 0);
     private static boolean software = false;
+    static RectF roundRect = new RectF();
 
     private static void blur(Bitmap bitmap, float radius) {
+        radius = Math.max(0, Math.min(radius, 25));
         if (software) {
             blurSoftware(bitmap, radius);
         } else {
@@ -85,7 +89,10 @@ public class ShadowGenerator {
             }
         }
 
-        boolean isRect = ((ShadowView) view).isRect();
+        ShadowView shadowView = (ShadowView) view;
+        CornerView cornerView = (CornerView) view;
+        boolean isRect = shadowView.getShadowShape() == ShadowShape.RECT ||
+                shadowView.getShadowShape() == ShadowShape.ROUND_RECT && cornerView.getCornerRadius() < view.getContext().getResources().getDimension(R.dimen.carbon_1dip) * 2.5;
 
         int e = (int) Math.ceil(elevation);
         Bitmap bitmap;
@@ -102,20 +109,18 @@ public class ShadowGenerator {
 
             return new NinePatchShadow(bitmap, elevation);
         } else {
-            bitmap = Bitmap.createBitmap((int) (view.getWidth() / SHADOW_SCALE + e * 2), (int) (view.getHeight() / SHADOW_SCALE + e * 2), Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(view.getWidth() + e * 2, view.getHeight() + e * 2, Bitmap.Config.ARGB_8888);
 
             Canvas shadowCanvas = new Canvas(bitmap);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColorFilter(lightingColorFilter);
+            paint.setColor(0xff000000);
 
-            if (view.getDrawingCache() != null) {
-                shadowCanvas.drawBitmap(view.getDrawingCache(), e, e, paint);
+            if (shadowView.getShadowShape() == ShadowShape.ROUND_RECT) {
+                roundRect.set(e, e, view.getWidth() - e, view.getHeight() - e);
+                shadowCanvas.drawRoundRect(roundRect, e, e, paint);
             } else {
-                Bitmap cache = Bitmap.createBitmap((int) (view.getWidth() / ShadowGenerator.SHADOW_SCALE), (int) (view.getHeight() / ShadowGenerator.SHADOW_SCALE), Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(cache);
-                canvas.scale(1 / SHADOW_SCALE, 1 / SHADOW_SCALE);
-                view.draw(canvas);
-                shadowCanvas.drawBitmap(cache, e, e, paint);
+                int r = view.getWidth() / 2;
+                shadowCanvas.drawCircle(r + e, r + e, r, paint);
             }
 
             blur(bitmap, elevation);

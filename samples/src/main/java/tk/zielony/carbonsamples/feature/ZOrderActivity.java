@@ -2,6 +2,7 @@ package tk.zielony.carbonsamples.feature;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.support.v4.view.ViewCompat;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -25,10 +26,10 @@ public class ZOrderActivity extends Activity {
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((ShadowView) layout.getChildAt(0)).setElevation(getResources().getDimension(R.dimen.dip) * (flag ? 2 : 3));
-                ((ShadowView) layout.getChildAt(1)).setElevation(getResources().getDimension(R.dimen.dip) * (flag ? 3 : 2));
+                ((ShadowView) layout.getChildAt(0)).setElevation(getResources().getDimension(R.dimen.carbon_1dip) * (flag ? 2 : 3));
+                ((ShadowView) layout.getChildAt(1)).setElevation(getResources().getDimension(R.dimen.carbon_1dip) * (flag ? 3 : 2));
                 flag = !flag;
-                layout.invalidate();
+                layout.postInvalidate();
             }
         });
     }

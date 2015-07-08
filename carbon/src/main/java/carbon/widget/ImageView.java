@@ -1,23 +1,27 @@
 package carbon.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
-import android.graphics.Bitmap;
-import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 
 import com.nineoldandroids.animation.Animator;
 import com.nineoldandroids.animation.AnimatorListenerAdapter;
-import com.nineoldandroids.view.ViewHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,18 +29,26 @@ import java.util.List;
 import carbon.Carbon;
 import carbon.R;
 import carbon.animation.AnimUtils;
+import carbon.animation.AnimatedView;
 import carbon.animation.StateAnimator;
+import carbon.animation.StateAnimatorView;
+import carbon.drawable.EmptyDrawable;
 import carbon.drawable.RippleDrawable;
 import carbon.drawable.RippleView;
+import carbon.drawable.VectorDrawable;
+import carbon.shadow.Shadow;
+import carbon.shadow.ShadowGenerator;
+import carbon.shadow.ShadowShape;
 import carbon.shadow.ShadowView;
 
 /**
  * Created by Marcin on 2015-01-22.
  */
-public class ImageView extends android.widget.ImageView implements ShadowView, RippleView, TouchMarginView, StateAnimatorView, AnimatedView {
+public class ImageView extends android.widget.ImageView implements ShadowView, RippleView, TouchMarginView, StateAnimatorView, AnimatedView, CornerView, TintedView {
+    Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     public ImageView(Context context) {
-        this(context,null);
+        this(context, null);
     }
 
     public ImageView(Context context, AttributeSet attrs) {
@@ -52,11 +64,16 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
         TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.ImageView, defStyleAttr, 0);
 
         setElevation(a.getDimension(R.styleable.ImageView_carbon_elevation, 0));
-        setCornerRadius(a.getDimension(R.styleable.ImageView_carbon_cornerRadius, 0));
+        int resId = a.getResourceId(R.styleable.ImageView_android_src, 0);
+        if (getDrawable() == null && ((resId & 0xffff0000) == 0x7f050000))
+            setImageDrawable(new VectorDrawable(getResources(), resId));
+
+        setCornerRadius((int) a.getDimension(R.styleable.ImageView_carbon_cornerRadius, 0));
 
         Carbon.initRippleDrawable(this, attrs, defStyleAttr);
         Carbon.initAnimations(this, attrs, defStyleAttr);
         Carbon.initTouchMargin(this, attrs, defStyleAttr);
+        Carbon.initTint(this, attrs, defStyleAttr);
 
         a.recycle();
     }
@@ -66,52 +83,68 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     // corners
     // -------------------------------
 
-    private float cornerRadius;
-    private Canvas textureCanvas;
-    private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private int cornerRadius;
+    private Path cornersMask;
+    private static PorterDuffXfermode pdMode = new PorterDuffXfermode(PorterDuff.Mode.CLEAR);
 
-    public float getCornerRadius() {
+    public int getCornerRadius() {
         return cornerRadius;
     }
 
-    public void setCornerRadius(float cornerRadius) {
+    public void setCornerRadius(int cornerRadius) {
         this.cornerRadius = cornerRadius;
-        initDrawing();
+        invalidateShadow();
+        initCorners();
     }
 
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
 
-        if (!changed || getWidth() == 0 || getHeight() == 0)
+        if (!changed)
             return;
 
-        initDrawing();
+        invalidateShadow();
+
+        if (getWidth() == 0 || getHeight() == 0)
+            return;
+
+        initCorners();
 
         if (rippleDrawable != null)
             rippleDrawable.setBounds(0, 0, getWidth(), getHeight());
     }
 
-    private void initDrawing() {
-        if (cornerRadius == 0 || getWidth() == 0 || getHeight() == 0)
-            return;
-        Bitmap texture = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
-        textureCanvas = new Canvas(texture);
-        paint.setShader(new BitmapShader(texture, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+    private void initCorners() {
+        if (cornerRadius > 0) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                setClipToOutline(true);
+                setOutlineProvider(ShadowShape.viewOutlineProvider);
+            } else {
+                cornersMask = new Path();
+                cornersMask.addRoundRect(new RectF(0, 0, getWidth(), getHeight()), cornerRadius, cornerRadius, Path.Direction.CW);
+                cornersMask.setFillType(Path.FillType.INVERSE_WINDING);
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+                setOutlineProvider(ViewOutlineProvider.BOUNDS);
+        }
     }
 
     @Override
-    public void draw(Canvas canvas) {
-        if (cornerRadius > 0 && getWidth() > 0 && getHeight() > 0) {
-            textureCanvas.drawColor(0, PorterDuff.Mode.CLEAR);
-            super.draw(textureCanvas);
-            if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Over)
-                rippleDrawable.draw(textureCanvas);
+    public void draw(@NonNull Canvas canvas) {
+        if (cornerRadius > 0 && getWidth() > 0 && getHeight() > 0 && Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT_WATCH) {
+            int saveCount = canvas.saveLayer(0, 0, getWidth(), getHeight(), null, Canvas.ALL_SAVE_FLAG);
 
-            RectF rect = new RectF();
-            rect.bottom = getHeight();
-            rect.right = getWidth();
-            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint);
+            super.draw(canvas);
+            if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Over)
+                rippleDrawable.draw(canvas);
+
+            paint.setXfermode(pdMode);
+            canvas.drawPath(cornersMask, paint);
+
+            canvas.restoreToCount(saveCount);
+            paint.setXfermode(null);
         } else {
             super.draw(canvas);
             if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Over)
@@ -125,11 +158,12 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     // -------------------------------
 
     private RippleDrawable rippleDrawable;
+    private EmptyDrawable emptyBackground = new EmptyDrawable();
 
     @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
+    public boolean dispatchTouchEvent(@NonNull MotionEvent event) {
         if (rippleDrawable != null && event.getAction() == MotionEvent.ACTION_DOWN)
-            ((RippleDrawable) rippleDrawable).setHotspot(event.getX(), event.getY());
+            rippleDrawable.setHotspot(event.getX(), event.getY());
         return super.dispatchTouchEvent(event);
     }
 
@@ -138,8 +172,21 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
         return rippleDrawable;
     }
 
-    public void setRippleDrawable(RippleDrawable rippleDrawable) {
-        this.rippleDrawable = rippleDrawable;
+    public void setRippleDrawable(RippleDrawable newRipple) {
+        if (rippleDrawable != null) {
+            rippleDrawable.setCallback(null);
+            if (rippleDrawable.getStyle() == RippleDrawable.Style.Background)
+                super.setBackgroundDrawable(rippleDrawable.getBackground() == null ? emptyBackground : rippleDrawable.getBackground());
+        }
+
+        if (newRipple != null) {
+            newRipple.setCallback(this);
+            if (newRipple.getStyle() == RippleDrawable.Style.Background) {
+                super.setBackgroundDrawable((Drawable) newRipple);
+            }
+        }
+
+        rippleDrawable = newRipple;
     }
 
     @Override
@@ -148,10 +195,107 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     }
 
     @Override
-    public void invalidateDrawable(Drawable drawable) {
+    public void invalidateDrawable(@NonNull Drawable drawable) {
         super.invalidateDrawable(drawable);
-        if (rippleDrawable != null && getParent() != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void invalidate(@NonNull Rect dirty) {
+        super.invalidate(dirty);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(dirty);
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).invalidate(dirty);
+    }
+
+    @Override
+    public void invalidate(int l, int t, int r, int b) {
+        super.invalidate(l, t, r, b);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(l, t, r, b);
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).invalidate(l, t, r, b);
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds) {
+        super.postInvalidateDelayed(delayMilliseconds);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds);
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds);
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds, int left, int top, int right, int bottom) {
+        super.postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+    }
+
+    @Override
+    public void postInvalidate() {
+        super.postInvalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
             ((View) getParent()).postInvalidate();
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).postInvalidate();
+    }
+
+    @Override
+    public void postInvalidate(int left, int top, int right, int bottom) {
+        super.postInvalidate(left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidate(left, top, right, bottom);
+
+        if (getElevation() > 0 || getCornerRadius() > 0)
+            ((View) getParent()).postInvalidate(left, top, right, bottom);
     }
 
     @Override
@@ -161,12 +305,16 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
 
     @Override
     public void setBackgroundDrawable(Drawable background) {
-        if (rippleDrawable == null || rippleDrawable.getBackground() == null) {
-            super.setBackgroundDrawable(background);
+        if (background instanceof RippleDrawable) {
+            setRippleDrawable((RippleDrawable) background);
             return;
         }
-        rippleDrawable.setBackground(background);
-        super.setBackgroundDrawable(rippleDrawable);
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Background) {
+            rippleDrawable.setCallback(null);
+            rippleDrawable = null;
+        }
+        super.setBackgroundDrawable(background == null ? emptyBackground : background);
     }
 
 
@@ -176,7 +324,7 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
 
     private float elevation = 0;
     private float translationZ = 0;
-    private boolean isRect = true;
+    private Shadow shadow;
 
     @Override
     public float getElevation() {
@@ -184,9 +332,10 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     }
 
     public synchronized void setElevation(float elevation) {
-        elevation = Math.max(0, Math.min(elevation, 25));
         if (elevation == this.elevation)
             return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            super.setElevation(elevation);
         this.elevation = elevation;
         if (getParent() != null)
             ((View) getParent()).postInvalidate();
@@ -200,25 +349,44 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     public synchronized void setTranslationZ(float translationZ) {
         if (translationZ == this.translationZ)
             return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            super.setTranslationZ(translationZ);
         this.translationZ = translationZ;
         if (getParent() != null)
             ((View) getParent()).postInvalidate();
     }
 
     @Override
-    public boolean isRect() {
-        return isRect;
-    }
-
-    @Override
-    public void setRect(boolean rect) {
-        this.isRect = rect;
+    public ShadowShape getShadowShape() {
+        if (cornerRadius == getWidth() / 2 && getWidth() == getHeight())
+            return ShadowShape.CIRCLE;
+        if (cornerRadius > 0)
+            return ShadowShape.ROUND_RECT;
+        return ShadowShape.RECT;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         setTranslationZ(enabled ? 0 : -elevation);
+    }
+
+    @Override
+    public Shadow getShadow() {
+        float elevation = getElevation() + getTranslationZ();
+        if (elevation >= 0.01f && getWidth() > 0 && getHeight() > 0) {
+            if (shadow == null || shadow.elevation != elevation)
+                shadow = ShadowGenerator.generateShadow(this, elevation);
+            return shadow;
+        }
+        return null;
+    }
+
+    @Override
+    public void invalidateShadow() {
+        shadow = null;
+        if (getParent() != null && getParent() instanceof View)
+            ((View) getParent()).postInvalidate();
     }
 
 
@@ -229,13 +397,28 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     private Rect touchMargin;
 
     @Override
-    public void setTouchMargin(Rect rect) {
-        touchMargin = rect;
+    public void setTouchMargin(int left, int top, int right, int bottom) {
+        touchMargin = new Rect(left, top, right, bottom);
     }
 
     @Override
-    public void setTouchMargin(int left, int top, int right, int bottom) {
-        touchMargin = new Rect(left, top, right, bottom);
+    public void setTouchMarginLeft(int margin) {
+        touchMargin.left = margin;
+    }
+
+    @Override
+    public void setTouchMarginTop(int margin) {
+        touchMargin.top = margin;
+    }
+
+    @Override
+    public void setTouchMarginRight(int margin) {
+        touchMargin.right = margin;
+    }
+
+    @Override
+    public void setTouchMarginBottom(int margin) {
+        touchMargin.bottom = margin;
     }
 
     @Override
@@ -243,7 +426,7 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
         return touchMargin;
     }
 
-    public void getHitRect(Rect outRect) {
+    public void getHitRect(@NonNull Rect outRect) {
         if (touchMargin == null) {
             super.getHitRect(outRect);
             return;
@@ -268,6 +451,9 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     @Override
     protected void drawableStateChanged() {
         super.drawableStateChanged();
+        updateTint();
+        if (rippleDrawable != null && rippleDrawable.getStyle() != RippleDrawable.Style.Background)
+            rippleDrawable.setState(getDrawableState());
         if (stateAnimators != null)
             for (StateAnimator animator : stateAnimators)
                 animator.stateChanged(getDrawableState());
@@ -279,19 +465,34 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
     // -------------------------------
 
     private AnimUtils.Style inAnim, outAnim;
+    private Animator animator;
 
     public void setVisibility(final int visibility) {
         if (getVisibility() != View.VISIBLE && visibility == View.VISIBLE && inAnim != null) {
-            AnimUtils.animateIn(this, inAnim, null);
+            animator = AnimUtils.animateIn(this, inAnim, new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator a) {
+                    animator = null;
+                }
+            });
             super.setVisibility(visibility);
         } else if (getVisibility() == View.VISIBLE && visibility != View.VISIBLE) {
-            AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
+            animator = AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
                 @Override
-                public void onAnimationEnd(Animator animator) {
+                public void onAnimationEnd(Animator a) {
                     ImageView.super.setVisibility(visibility);
+                    animator = null;
                 }
             });
         }
+    }
+
+    public void setVisibilityImmediate(final int visibility) {
+        super.setVisibility(visibility);
+    }
+
+    public Animator getAnimator() {
+        return animator;
     }
 
     public AnimUtils.Style getOutAnimation() {
@@ -308,5 +509,37 @@ public class ImageView extends android.widget.ImageView implements ShadowView, R
 
     public void setInAnimation(AnimUtils.Style inAnim) {
         this.inAnim = inAnim;
+    }
+
+
+    // -------------------------------
+    // tint
+    // -------------------------------
+
+    ColorStateList tint;
+
+    @Override
+    public void setTint(ColorStateList list) {
+        this.tint = list;
+        updateTint();
+        postInvalidate();
+    }
+
+    @Override
+    public void setTint(int color) {
+        setTint(ColorStateList.valueOf(color));
+    }
+
+    @Override
+    public ColorStateList getTint() {
+        return tint;
+    }
+
+    private void updateTint() {
+        if (tint != null) {
+            int color = tint.getColorForState(getDrawableState(), tint.getDefaultColor());
+            setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP));
+            setAlpha(Color.alpha(color));
+        }
     }
 }

@@ -1,17 +1,16 @@
 package tk.zielony.carbonsamples;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ListView;
+import android.support.v7.widget.LinearLayoutManager;
 
+import carbon.widget.RecyclerView;
 import carbon.widget.Toolbar;
+import tk.zielony.carbonsamples.feature.AnchorActivity;
+import tk.zielony.carbonsamples.feature.ContextWrapperActivity;
+import tk.zielony.carbonsamples.feature.LargeShadowActivity;
 import tk.zielony.carbonsamples.feature.RobotoActivity;
-import tk.zielony.carbonsamples.feature.SaveStateActivity;
-import tk.zielony.carbonsamples.feature.ShadowActivity;
-import tk.zielony.carbonsamples.feature.StatusNavigationActivity;
+import tk.zielony.carbonsamples.feature.RoundedCornersActivity;
 import tk.zielony.carbonsamples.feature.TextAppearanceActivity;
 import tk.zielony.carbonsamples.feature.ZOrderActivity;
 
@@ -24,27 +23,21 @@ public class FeaturesActivity extends Activity {
         setContentView(R.layout.activity_demo);
 
         final Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        toolbar.setUpIconVisible(true);
+        toolbar.setIconVisible(true);
         toolbar.setText("Features");
 
-        ListView listView = (ListView) findViewById(R.id.list);
-        String[] items = new String[]{
-                "Roboto", "Saving state", "Large shadow", "Status & navigation bars", "Text appearance", "Z order"
+        RecyclerView recyclerView = (RecyclerView) findViewById(R.id.list);
+        ViewModel[] items = new ViewModel[]{
+                new ViewModel(RobotoActivity.class, "Roboto"),
+                new ViewModel(LargeShadowActivity.class, "Large shadow"),
+                new ViewModel(TextAppearanceActivity.class, "Text appearance"),
+                new ViewModel(ZOrderActivity.class, "Z order"),
+                new ViewModel(RoundedCornersActivity.class, "Rounded corners"),
+                new ViewModel(AnchorActivity.class, "Anchors"),
+                new ViewModel(ContextWrapperActivity.class, "Context wrapper")
         };
-        final Class[] activities = new Class[]{
-                RobotoActivity.class, SaveStateActivity.class, ShadowActivity.class, StatusNavigationActivity.class, TextAppearanceActivity.class, ZOrderActivity.class
-        };
-        final boolean[] beta = new boolean[]{
-                false, true, false, false, false, false
-        };
-        listView.setAdapter(new MainListAdapter(items, beta));
-
-        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                startActivity(new Intent(FeaturesActivity.this, activities[position]));
-            }
-        });
+        recyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        recyclerView.setAdapter(new MainListAdapter(items));
     }
 
 }

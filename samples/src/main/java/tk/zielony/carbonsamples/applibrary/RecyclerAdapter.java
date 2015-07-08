@@ -1,5 +1,7 @@
 package tk.zielony.carbonsamples.applibrary;
 
+import android.graphics.Color;
+import android.os.Build;
 import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -8,9 +10,13 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Target;
 
 import java.util.List;
 
+import carbon.drawable.RippleDrawable;
+import carbon.drawable.RippleDrawableCompat;
+import carbon.widget.CardView;
 import tk.zielony.carbonsamples.R;
 
 /**
@@ -29,6 +35,8 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     @Override
     public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         View v = LayoutInflater.from(parent.getContext()).inflate(itemLayout, parent, false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
+            v.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         return new ViewHolder(v);
     }
 
@@ -38,12 +46,16 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         holder.text.setText(item.getText());
         holder.image.setImageBitmap(null);
         Picasso.with(holder.image.getContext()).cancelRequest(holder.image);
-        Picasso.with(holder.image.getContext()).load(item.getImage()).into(holder.image);
+        holder.image.setVisibility(View.INVISIBLE);
+        Picasso.with(holder.image.getContext()).load(item.getImage()).into((Target) holder.image);
+        //Picasso.with(holder.image.getContext()).load(R.drawable.mazda).into((Target)holder.image);
         holder.itemView.setTag(item);
 
         ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams) holder.card.getLayoutParams();
-        layoutParams.bottomMargin = position == items.size() - 1 ? 0 : (int) -holder.card.getContext().getResources().getDimension(R.dimen.carbon_paddingHalf);
-        holder.card.setLayoutParams(layoutParams);
+        if (position != items.size() - 1) {
+            layoutParams.bottomMargin = 0;
+            holder.card.setLayoutParams(layoutParams);
+        }
     }
 
     @Override
@@ -54,13 +66,20 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     public static class ViewHolder extends RecyclerView.ViewHolder {
         public ImageView image;
         public TextView text;
-        public View card;
+        public CardView card;
 
         public ViewHolder(View itemView) {
             super(itemView);
             image = (ImageView) itemView.findViewById(R.id.image);
             text = (TextView) itemView.findViewById(R.id.text);
-            card = itemView;
+            card = (CardView) itemView;
+            card.setClickable(true);
+            card.setBackgroundColor(Color.WHITE);
+
+            RippleDrawable rippleDrawable = new RippleDrawableCompat(0x42ff0000, null, itemView.getContext(), RippleDrawable.Style.Over);
+            rippleDrawable.setCallback(card);
+            rippleDrawable.setHotspotEnabled(true);
+            card.setRippleDrawable(rippleDrawable);
         }
     }
 }

@@ -1,10 +1,13 @@
 package carbon.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.PointF;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -18,15 +21,19 @@ import java.util.List;
 import carbon.Carbon;
 import carbon.R;
 import carbon.animation.AnimUtils;
+import carbon.animation.AnimatedView;
 import carbon.animation.StateAnimator;
+import carbon.animation.StateAnimatorView;
 import carbon.drawable.CheckableDrawable;
+import carbon.drawable.ControlCheckedColorStateList;
 import carbon.drawable.RippleDrawable;
 import carbon.drawable.RippleView;
+import carbon.internal.TypefaceUtils;
 
 /**
  * Created by Marcin on 2015-03-06.
  */
-public class CheckBox extends android.widget.CheckBox implements RippleView, TouchMarginView, StateAnimatorView, AnimatedView {
+public class CheckBox extends android.widget.CheckBox implements RippleView, TouchMarginView, StateAnimatorView, AnimatedView, TintedView {
     private CheckableDrawable drawable;
 
     public CheckBox(Context context) {
@@ -43,29 +50,20 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     }
 
     public void init(AttributeSet attrs, int defStyleAttr) {
-        if(!isInEditMode()) {
-            drawable = new CheckableDrawable(getContext(), R.raw.carbon_checkbox_checked, R.raw.carbon_checkbox_unchecked, R.raw.carbon_checkbox_filled, new PointF(-0.09f, 0.11f));
-            setCompoundDrawablesWithIntrinsicBounds(drawable, null, null, null);
-            setButtonDrawable(null);
-        }
+        if (isInEditMode())
+            return;
+
+        drawable = new CheckableDrawable(getContext(), R.raw.carbon_checkbox_checked, R.raw.carbon_checkbox_unchecked, R.raw.carbon_checkbox_filled, new PointF(-0.09f, 0.11f));
+        int size = (int) (Carbon.getDip(getContext())*24);
+        drawable.setBounds(0,0,size,size);
+        setCompoundDrawables(drawable, null, null, null);
+        setButtonDrawable(null);
 
         TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.CheckBox, defStyleAttr, 0);
 
         int ap = a.getResourceId(R.styleable.CheckBox_android_textAppearance, -1);
-        if (ap != -1) {
-            TypedArray appearance = getContext().obtainStyledAttributes(ap, R.styleable.TextAppearance);
-            if (appearance != null) {
-                for (int i = 0; i < appearance.getIndexCount(); i++) {
-                    int attr = appearance.getIndex(i);
-                    if (attr == R.styleable.TextAppearance_carbon_textAllCaps) {
-                        setAllCaps(appearance.getBoolean(R.styleable.TextAppearance_carbon_textAllCaps, true));
-                    } else if (attr == R.styleable.TextAppearance_carbon_textStyle) {
-                        setTextStyle(Roboto.Style.values()[appearance.getInt(R.styleable.TextAppearance_carbon_textStyle, Roboto.Style.Regular.ordinal())]);
-                    }
-                }
-                appearance.recycle();
-            }
-        }
+        if (ap != -1)
+            setTextAppearance(ap);
 
         Carbon.initRippleDrawable(this, attrs, defStyleAttr);
 
@@ -73,20 +71,20 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
             int attr = a.getIndex(i);
             if (attr == R.styleable.CheckBox_carbon_textAllCaps) {
                 setAllCaps(a.getBoolean(attr, false));
-            } else if (attr == R.styleable.CheckBox_carbon_textStyle) {
-                setTextStyle(Roboto.Style.values()[a.getInt(attr, Roboto.Style.Regular.ordinal())]);
-            }else if(attr==R.styleable.CheckBox_carbon_checkCheckedColor){
-                drawable.setCheckedColor(a.getColor(attr,0));
-            }else if(attr==R.styleable.CheckBox_carbon_checkUncheckedColor){
-                drawable.setUncheckedColor(a.getColor(attr,0));
+            } else if (attr == R.styleable.CheckBox_carbon_fontPath) {
+                String path = a.getString(attr);
+                Typeface typeface = TypefaceUtils.getTypeface(getContext(), path);
+                setTypeface(typeface);
             }
         }
+
+        a.recycle();
 
         setCheckedImmediate(isChecked());
 
         Carbon.initAnimations(this, attrs, defStyleAttr);
         Carbon.initTouchMargin(this, attrs, defStyleAttr);
-        a.recycle();
+        Carbon.initTint(this, attrs, defStyleAttr);
     }
 
     @Override
@@ -108,6 +106,29 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
         }
     }
 
+    @Override
+    public void setTextAppearance(@NonNull Context context, int resid) {
+        super.setTextAppearance(context, resid);
+        setTextAppearance(resid);
+    }
+
+    private void setTextAppearance(int resid) {
+        TypedArray appearance = getContext().obtainStyledAttributes(resid, R.styleable.TextAppearance);
+        if (appearance != null) {
+            for (int i = 0; i < appearance.getIndexCount(); i++) {
+                int attr = appearance.getIndex(i);
+                if (attr == R.styleable.TextAppearance_carbon_textAllCaps) {
+                    setAllCaps(appearance.getBoolean(R.styleable.TextAppearance_carbon_textAllCaps, true));
+                } else if (attr == R.styleable.TextAppearance_carbon_fontPath) {
+                    String path = appearance.getString(attr);
+                    Typeface typeface = TypefaceUtils.getTypeface(getContext(), path);
+                    setTypeface(typeface);
+                }
+            }
+            appearance.recycle();
+        }
+    }
+
     public void setCheckedImmediate(boolean checked) {
         super.setChecked(checked);
         drawable.setCheckedImmediate(checked);
@@ -120,9 +141,9 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     private RippleDrawable rippleDrawable;
 
     @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
+    public boolean dispatchTouchEvent(@NonNull MotionEvent event) {
         if (rippleDrawable != null && event.getAction() == MotionEvent.ACTION_DOWN)
-            ((RippleDrawable) rippleDrawable).setHotspot(event.getX(), event.getY());
+            rippleDrawable.setHotspot(event.getX(), event.getY());
         return super.dispatchTouchEvent(event);
     }
 
@@ -131,8 +152,21 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
         return rippleDrawable;
     }
 
-    public void setRippleDrawable(RippleDrawable rippleDrawable) {
-        this.rippleDrawable = rippleDrawable;
+    public void setRippleDrawable(RippleDrawable newRipple) {
+        if (rippleDrawable != null) {
+            rippleDrawable.setCallback(null);
+            if (rippleDrawable.getStyle() == RippleDrawable.Style.Background)
+                super.setBackgroundDrawable(rippleDrawable.getBackground());
+        }
+
+        if (newRipple != null) {
+            newRipple.setCallback(this);
+            if (newRipple.getStyle() == RippleDrawable.Style.Background) {
+                super.setBackgroundDrawable((Drawable) newRipple);
+            }
+        }
+
+        rippleDrawable = newRipple;
     }
 
     @Override
@@ -141,10 +175,83 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     }
 
     @Override
-    public void invalidateDrawable(Drawable drawable) {
+    public void invalidateDrawable(@NonNull Drawable drawable) {
         super.invalidateDrawable(drawable);
-        if (rippleDrawable != null && getParent() != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void invalidate(@NonNull Rect dirty) {
+        super.invalidate(dirty);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(dirty);
+    }
+
+    @Override
+    public void invalidate(int l, int t, int r, int b) {
+        super.invalidate(l, t, r, b);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(l, t, r, b);
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds) {
+        super.postInvalidateDelayed(delayMilliseconds);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds);
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds, int left, int top, int right, int bottom) {
+        super.postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+    }
+
+    @Override
+    public void postInvalidate() {
+        super.postInvalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
             ((View) getParent()).postInvalidate();
+    }
+
+    @Override
+    public void postInvalidate(int left, int top, int right, int bottom) {
+        super.postInvalidate(left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidate(left, top, right, bottom);
     }
 
     @Override
@@ -154,13 +261,18 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
 
     @Override
     public void setBackgroundDrawable(Drawable background) {
-        if (rippleDrawable == null || rippleDrawable.getBackground() == null) {
-            super.setBackgroundDrawable(background);
+        if (background instanceof RippleDrawable) {
+            setRippleDrawable((RippleDrawable) background);
             return;
         }
-        rippleDrawable.setBackground(background);
-        super.setBackgroundDrawable(rippleDrawable);
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Background) {
+            rippleDrawable.setCallback(null);
+            rippleDrawable = null;
+        }
+        super.setBackgroundDrawable(background);
     }
+
 
     // -------------------------------
     // touch margin
@@ -169,13 +281,28 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     private Rect touchMargin;
 
     @Override
-    public void setTouchMargin(Rect rect) {
-        touchMargin = rect;
+    public void setTouchMargin(int left, int top, int right, int bottom) {
+        touchMargin = new Rect(left, top, right, bottom);
     }
 
     @Override
-    public void setTouchMargin(int left, int top, int right, int bottom) {
-        touchMargin = new Rect(left, top, right, bottom);
+    public void setTouchMarginLeft(int margin) {
+        touchMargin.left = margin;
+    }
+
+    @Override
+    public void setTouchMarginTop(int margin) {
+        touchMargin.top = margin;
+    }
+
+    @Override
+    public void setTouchMarginRight(int margin) {
+        touchMargin.right = margin;
+    }
+
+    @Override
+    public void setTouchMarginBottom(int margin) {
+        touchMargin.bottom = margin;
     }
 
     @Override
@@ -183,7 +310,7 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
         return touchMargin;
     }
 
-    public void getHitRect(Rect outRect) {
+    public void getHitRect(@NonNull Rect outRect) {
         if (touchMargin == null) {
             super.getHitRect(outRect);
             return;
@@ -208,6 +335,8 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     @Override
     protected void drawableStateChanged() {
         super.drawableStateChanged();
+        if (rippleDrawable != null && rippleDrawable.getStyle() != RippleDrawable.Style.Background)
+            rippleDrawable.setState(getDrawableState());
         if (stateAnimators != null)
             for (StateAnimator animator : stateAnimators)
                 animator.stateChanged(getDrawableState());
@@ -219,19 +348,34 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
     // -------------------------------
 
     private AnimUtils.Style inAnim, outAnim;
+    private Animator animator;
 
     public void setVisibility(final int visibility) {
         if (getVisibility() != View.VISIBLE && visibility == View.VISIBLE && inAnim != null) {
-            AnimUtils.animateIn(this, inAnim, null);
+            animator = AnimUtils.animateIn(this, inAnim, new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator a) {
+                    animator = null;
+                }
+            });
             super.setVisibility(visibility);
         } else if (getVisibility() == View.VISIBLE && visibility != View.VISIBLE) {
-            AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
+            animator = AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
                 @Override
-                public void onAnimationEnd(Animator animator) {
+                public void onAnimationEnd(Animator a) {
                     CheckBox.super.setVisibility(visibility);
+                    animator = null;
                 }
             });
         }
+    }
+
+    public void setVisibilityImmediate(final int visibility){
+        super.setVisibility(visibility);
+    }
+
+    public Animator getAnimator() {
+        return animator;
     }
 
     public AnimUtils.Style getOutAnimation() {
@@ -252,18 +396,24 @@ public class CheckBox extends android.widget.CheckBox implements RippleView, Tou
 
 
     // -------------------------------
-    // roboto
+    // tint
     // -------------------------------
 
-    Roboto.Style style;
+    ColorStateList tint;
 
-    public void setTextStyle(Roboto.Style style) {
-        this.style = style;
-        if (!isInEditMode())
-            super.setTypeface(Roboto.getTypeface(getContext(), style));
+    @Override
+    public void setTint(ColorStateList list) {
+        this.tint = list;
+        drawable.setColor(tint != null ? tint : new ControlCheckedColorStateList(getContext()));
     }
 
-    public Roboto.Style getTextStyle() {
-        return style;
+    @Override
+    public void setTint(int color) {
+        setTint(ColorStateList.valueOf(color));
+    }
+
+    @Override
+    public ColorStateList getTint() {
+        return tint;
     }
 }

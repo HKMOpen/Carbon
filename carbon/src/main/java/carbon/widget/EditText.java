@@ -1,20 +1,30 @@
 package carbon.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
+import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
-import android.graphics.DashPathEffect;
+import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Shader;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.support.annotation.NonNull;
 import android.text.Editable;
 import android.text.TextPaint;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 
 import com.nineoldandroids.animation.Animator;
 import com.nineoldandroids.animation.AnimatorListenerAdapter;
+import com.nineoldandroids.animation.ValueAnimator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,31 +33,34 @@ import java.util.regex.Pattern;
 import carbon.Carbon;
 import carbon.R;
 import carbon.animation.AnimUtils;
+import carbon.animation.AnimatedView;
 import carbon.animation.StateAnimator;
+import carbon.drawable.ControlFocusedColorStateList;
+import carbon.drawable.EmptyDrawable;
+import carbon.drawable.RippleDrawable;
+import carbon.drawable.RippleView;
+import carbon.internal.TypefaceUtils;
 
 /**
  * Created by Marcin on 2015-02-14.
  */
-public class EditText extends android.widget.EditText implements TouchMarginView, AnimatedView {
+public class EditText extends android.widget.EditText implements RippleView, TouchMarginView, AnimatedView, TintedView {
+    Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
     int dividerPadding;
-    int dividerColor;
     int disabledColor = 0x4d000000;
     int errorColor = 0xffff0000;
-    private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private Pattern pattern;
     private String errorMessage;
     TextPaint errorPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    boolean error;
+    boolean drawError;
 
     int minCharacters;
     int maxCharacters;
-
-    int extraPaddingBottom = 0, extraPaddingTop = 0;
+    TextPaint counterPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
 
     TextPaint labelPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-
-    boolean floatingHint = false;
 
     TextWatcher textWatcher = new TextWatcher() {
         @Override
@@ -62,10 +75,38 @@ public class EditText extends android.widget.EditText implements TouchMarginView
 
         @Override
         public void afterTextChanged(Editable s) {
-            if (errorMessage != null && pattern != null)
-                error = !pattern.matcher(getText().toString()).matches();
+            validate();
         }
     };
+
+    private void validate() {
+        String s = getText().toString();
+        // dictionary suggestions vs s.length()>0
+        /*try {
+            Field mTextField = getText().getClass().getDeclaredField("mText");
+            mTextField.setAccessible(true);
+            s = new String((char[])mTextField.get(getText()));
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }*/
+        if (errorMessage != null && pattern != null)
+            drawError = !pattern.matcher(s).matches();
+        counterError = minCharacters > 0 && s.length() < minCharacters || maxCharacters < Integer.MAX_VALUE && s.length() > maxCharacters;
+        labelPaint.setColor(drawError | counterError ? errorColor : tint.getColorForState(new int[]{android.R.attr.state_focused}, disabledColor));
+        counterPaint.setColor(drawError | counterError ? errorColor : disabledColor);
+        if (showFloatingLabel)
+            animateFloatingLabel(isFocused() && s.length() > 0);
+    }
+
+    private BitmapShader dashPathShader;
+    private float labelFrac = 0;
+    private boolean showFloatingLabel = true;
+    private boolean drawDivider = true;
+    private boolean counterError = false;
+
+    float labelTextSize, paddingError, paddingLabel;
 
     public EditText(Context context) {
         this(context, null);
@@ -81,43 +122,41 @@ public class EditText extends android.widget.EditText implements TouchMarginView
     }
 
     public void init(AttributeSet attrs, int defStyleAttr) {
+        if (isInEditMode())
+            return;
+
         TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.EditText, defStyleAttr, 0);
 
-        int ap = a.getResourceId(R.styleable.RadioButton_android_textAppearance, -1);
-        if (ap != -1) {
-            TypedArray appearance = getContext().obtainStyledAttributes(ap, R.styleable.TextAppearance);
-            if (appearance != null) {
-                for (int i = 0; i < appearance.getIndexCount(); i++) {
-                    int attr = appearance.getIndex(i);
-                    if (attr == R.styleable.TextAppearance_carbon_textAllCaps) {
-                        setAllCaps(appearance.getBoolean(R.styleable.TextAppearance_carbon_textAllCaps, true));
-                    } else if (attr == R.styleable.TextAppearance_carbon_textStyle) {
-                        setTextStyle(Roboto.Style.values()[appearance.getInt(R.styleable.TextAppearance_carbon_textStyle, Roboto.Style.Regular.ordinal())]);
-                    }
-                }
-                appearance.recycle();
-            }
-        }
+        int ap = a.getResourceId(R.styleable.EditText_android_textAppearance, -1);
+        if (ap != -1)
+            setTextAppearance(ap);
 
         for (int i = 0; i < a.getIndexCount(); i++) {
             int attr = a.getIndex(i);
             if (attr == R.styleable.EditText_carbon_textAllCaps) {
-                setAllCaps(a.getBoolean(R.styleable.EditText_carbon_textAllCaps, false));
-            } else if (attr == R.styleable.EditText_carbon_textStyle) {
-                setTextStyle(Roboto.Style.values()[a.getInt(R.styleable.EditText_carbon_textStyle, Roboto.Style.Regular.ordinal())]);
+                setAllCaps(a.getBoolean(attr, false));
+            } else if (attr == R.styleable.EditText_carbon_fontPath) {
+                String path = a.getString(attr);
+                Typeface typeface = TypefaceUtils.getTypeface(getContext(), path);
+                setTypeface(typeface);
             }
         }
 
-        Carbon.initAnimations(this, attrs, defStyleAttr);
-        Carbon.initTouchMargin(this, attrs, defStyleAttr);
-
         setPattern(a.getString(R.styleable.EditText_carbon_pattern));
-        setDividerPadding((int) a.getDimension(R.styleable.EditText_carbon_dividerPadding, 0));
-        setDividerColor(a.getColor(R.styleable.EditText_carbon_dividerColor, 0));
+        dividerPadding = (int) getResources().getDimension(R.dimen.carbon_paddingHalf);
+
         if (!isInEditMode())
-            setErrorMessage(a.getString(R.styleable.EditText_carbon_errorMessage));
+            setError(a.getString(R.styleable.EditText_carbon_errorMessage));
+        setMinCharacters(a.getInt(R.styleable.EditText_carbon_minCharacters, 0));
+        setMaxCharacters(a.getInt(R.styleable.EditText_carbon_maxCharacters, Integer.MAX_VALUE));
+        setFloatingLabelEnabled(a.getBoolean(R.styleable.EditText_carbon_floatingLabel, false));
 
         a.recycle();
+
+        Carbon.initRippleDrawable(this, attrs, defStyleAttr);
+        Carbon.initAnimations(this, attrs, defStyleAttr);
+        Carbon.initTouchMargin(this, attrs, defStyleAttr);
+        Carbon.initTint(this, attrs, defStyleAttr);
 
         if (!isInEditMode()) {
             errorPaint.setTypeface(Roboto.getTypeface(getContext(), Roboto.Style.Regular));
@@ -126,10 +165,65 @@ public class EditText extends android.widget.EditText implements TouchMarginView
 
             labelPaint.setTypeface(Roboto.getTypeface(getContext(), Roboto.Style.Regular));
             labelPaint.setTextSize(getResources().getDimension(R.dimen.carbon_labelTextSize));
-            labelPaint.setColor(disabledColor);
+
+            counterPaint.setTypeface(Roboto.getTypeface(getContext(), Roboto.Style.Regular));
+            counterPaint.setTextSize(getResources().getDimension(R.dimen.carbon_charCounterTextSize));
         }
 
         addTextChangedListener(textWatcher);
+
+        float dip = getResources().getDimension(R.dimen.carbon_1dip);
+        Bitmap dashPathBitmap = Bitmap.createBitmap((int) (dip * 4), (int) dip, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(dashPathBitmap);
+        paint.setColor(0xffffffff);
+        paint.setAlpha(255);
+        paint.setColor(disabledColor);
+        c.drawCircle(dashPathBitmap.getHeight() / 2.0f, dashPathBitmap.getHeight() / 2.0f, dashPathBitmap.getHeight() / 2.0f, paint);
+        dashPathShader = new BitmapShader(dashPathBitmap, Shader.TileMode.REPEAT, Shader.TileMode.CLAMP);
+        labelTextSize = getResources().getDimension(R.dimen.carbon_labelTextSize);
+        paddingError = getResources().getDimension(R.dimen.carbon_paddingHalf);
+        paddingLabel = getResources().getDimension(R.dimen.carbon_paddingHalf);
+
+        /*if (android.os.Build.VERSION.SDK_INT < 11) {
+            setOnCreateContextMenuListener(new OnCreateContextMenuListener() {
+
+                @Override
+                public void onCreateContextMenu(ContextMenu menu, View v,
+                                                ContextMenu.ContextMenuInfo menuInfo) {
+                    // TODO Auto-generated method stub
+                    menu.clear();
+                }
+            });
+        } else {
+            setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+
+                public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                    // TODO Auto-generated method stub
+                    return false;
+                }
+
+                public void onDestroyActionMode(ActionMode mode) {
+                    // TODO Auto-generated method stub
+
+                }
+
+                public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                    // TODO Auto-generated method stub
+                    return false;
+                }
+
+                public boolean onActionItemClicked(ActionMode mode,
+                                                   MenuItem item) {
+                    // TODO Auto-generated method stub
+                    return false;
+                }
+            });
+        }*/
+
+        validate();
+
+        if (isFocused() && getText().length() > 0)
+            labelFrac = 1;
     }
 
     public void setAllCaps(boolean allCaps) {
@@ -140,29 +234,38 @@ public class EditText extends android.widget.EditText implements TouchMarginView
         }
     }
 
-    private void updateLayout() {
-        int paddingBottom = getPaddingBottom() - extraPaddingBottom;
-        int dividerPadding = this.dividerPadding - extraPaddingBottom;
-        if (errorMessage != null || minCharacters > 0 || maxCharacters > 0) {
-            extraPaddingBottom = (int) (getResources().getDimension(R.dimen.carbon_errorTextSize) + getResources().getDimension(R.dimen.carbon_paddingHalf));
-        } else {
-            extraPaddingBottom = 0;
-        }
-        setPadding(getPaddingLeft(), getPaddingTop(), getPaddingRight(), paddingBottom + extraPaddingBottom);
-        this.dividerPadding = dividerPadding + extraPaddingBottom;
+    @Override
+    public void setTextAppearance(@NonNull Context context, int resid) {
+        super.setTextAppearance(context, resid);
+        setTextAppearance(resid);
     }
 
-    public void setErrorMessage(String text) {
-        this.errorMessage = text;
-        if (errorMessage == null)
-            error = false;
-        updateLayout();
+    private void setTextAppearance(int resid) {
+        TypedArray appearance = getContext().obtainStyledAttributes(resid, R.styleable.TextAppearance);
+        if (appearance != null) {
+            for (int i = 0; i < appearance.getIndexCount(); i++) {
+                int attr = appearance.getIndex(i);
+                if (attr == R.styleable.TextAppearance_carbon_textAllCaps) {
+                    setAllCaps(appearance.getBoolean(R.styleable.TextAppearance_carbon_textAllCaps, true));
+                } else if (attr == R.styleable.TextAppearance_carbon_fontPath) {
+                    String path = appearance.getString(attr);
+                    Typeface typeface = TypefaceUtils.getTypeface(getContext(), path);
+                    setTypeface(typeface);
+                }
+            }
+            appearance.recycle();
+        }
     }
 
     @Override
     public void setError(CharSequence text) {
-        setErrorMessage(text.toString());
-        error = errorMessage != null;
+        if (text == null) {
+            drawError = false;
+            errorMessage = null;
+        } else {
+            errorMessage = text.toString();
+            drawError = true;
+        }
     }
 
     @Override
@@ -171,24 +274,65 @@ public class EditText extends android.widget.EditText implements TouchMarginView
     }
 
     @Override
-    public void draw(Canvas canvas) {
+    public void draw(@NonNull Canvas canvas) {
         super.draw(canvas);
-        if (isFocused() && isEnabled()) {
-            paint.setStrokeWidth(2 * getResources().getDimension(R.dimen.dip));
-        } else {
-            paint.setStrokeWidth(getResources().getDimension(R.dimen.dip));
-        }
-        if (isEnabled()) {
-            paint.setColor(error ? errorColor : dividerColor);
-            paint.setPathEffect(null);
-        } else {
-            paint.setColor(disabledColor);
-            paint.setPathEffect(new DashPathEffect(new float[]{getResources().getDimension(R.dimen.dip), 3 * getResources().getDimension(R.dimen.dip)}, 0));
-        }
-        canvas.drawLine(0, getHeight() - dividerPadding, getWidth(), getHeight() - dividerPadding, paint);
+        if (isInEditMode())
+            return;
 
-        if (error && errorMessage != null)
-            canvas.drawText(errorMessage, 0, getHeight() - dividerPadding + errorPaint.getTextSize() + getResources().getDimension(R.dimen.carbon_paddingHalf), errorPaint);
+        if (isFocused() && isEnabled()) {
+            paint.setStrokeWidth(2 * getResources().getDimension(R.dimen.carbon_1dip));
+        } else {
+            paint.setStrokeWidth(getResources().getDimension(R.dimen.carbon_1dip));
+        }
+        if (drawDivider) {
+            if (isEnabled()) {
+                paint.setColor(drawError || counterError ? errorColor : tint.getColorForState(getDrawableState(), tint.getDefaultColor()));
+                paint.setShader(null);
+                canvas.drawLine(getPaddingLeft(), getHeight() - getPaddingBottom() + dividerPadding, getWidth() - getPaddingRight(), getHeight() - getPaddingBottom() + dividerPadding, paint);
+            } else {
+                Matrix matrix = new Matrix();
+                matrix.postTranslate(0, getHeight() - getPaddingBottom() + dividerPadding - paint.getStrokeWidth() / 2.0f);
+                dashPathShader.setLocalMatrix(matrix);
+                paint.setShader(dashPathShader);
+                canvas.drawRect(getPaddingLeft(), getHeight() - getPaddingBottom() - dividerPadding - paint.getStrokeWidth() / 2.0f,
+                        getWidth() - getPaddingRight(), getHeight() - getPaddingBottom() - dividerPadding + paint.getStrokeWidth() / 2.0f, paint);
+            }
+        }
+
+        if (!isEnabled())
+            return;
+
+        if (drawError)
+            canvas.drawText(errorMessage, getPaddingLeft(), getHeight() - getPaddingBottom() + dividerPadding + paddingError + labelTextSize, errorPaint);
+
+        if (getHint() != null && showFloatingLabel) {
+            String label = getHint().toString();
+            labelPaint.setAlpha((int) (255 * labelFrac));
+            canvas.drawText(label, getPaddingLeft(), getPaddingTop() + labelTextSize * (1 - labelFrac) - paddingLabel, labelPaint);
+        }
+
+        int length = getText().length();
+        if (minCharacters > 0 && maxCharacters < Integer.MAX_VALUE) {
+            String text = length + " / " + minCharacters + "-" + maxCharacters;
+            canvas.drawText(text, getWidth() - counterPaint.measureText(text) - getPaddingRight(), getHeight() - getPaddingBottom() + dividerPadding + paddingError + labelTextSize, counterPaint);
+        } else if (minCharacters > 0) {
+            String text = length + " / " + minCharacters + "+";
+            canvas.drawText(text, getWidth() - counterPaint.measureText(text) - getPaddingRight(), getHeight() - getPaddingBottom() + dividerPadding + paddingError + labelTextSize, counterPaint);
+        } else if (maxCharacters < Integer.MAX_VALUE) {
+            String text = length + " / " + maxCharacters;
+            canvas.drawText(text, getWidth() - counterPaint.measureText(text) - getPaddingRight(), getHeight() - getPaddingBottom() + dividerPadding + paddingError + labelTextSize, counterPaint);
+        }
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Over)
+            rippleDrawable.draw(canvas);
+    }
+
+    public boolean isFloatingLabelEnabled() {
+        return showFloatingLabel;
+    }
+
+    public void setFloatingLabelEnabled(boolean showFloatingLabel) {
+        this.showFloatingLabel = showFloatingLabel;
     }
 
     public String getPattern() {
@@ -209,7 +353,6 @@ public class EditText extends android.widget.EditText implements TouchMarginView
 
     public void setMinCharacters(int minCharacters) {
         this.minCharacters = minCharacters;
-        updateLayout();
     }
 
     public int getMaxCharacters() {
@@ -218,23 +361,187 @@ public class EditText extends android.widget.EditText implements TouchMarginView
 
     public void setMaxCharacters(int maxCharacters) {
         this.maxCharacters = maxCharacters;
-        updateLayout();
     }
 
-    public int getDividerColor() {
-        return dividerColor;
+    private void animateFloatingLabel(boolean visible) {
+        ValueAnimator animator;
+        if (visible) {
+            animator = ValueAnimator.ofFloat(labelFrac, 1);
+            animator.setDuration((long) ((1 - labelFrac) * 200));
+        } else {
+            animator = ValueAnimator.ofFloat(labelFrac, 0);
+            animator.setDuration((long) (labelFrac * 200));
+        }
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                labelFrac = (float) animation.getAnimatedValue();
+                postInvalidate();
+            }
+        });
+        animator.start();
     }
 
-    public void setDividerColor(int dividerColor) {
-        this.dividerColor = dividerColor;
+    @Override
+    protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect);
+        animateFloatingLabel(focused && getText().length() > 0);
     }
 
-    public int getDividerPadding() {
-        return dividerPadding;
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+
+        if (!changed)
+            return;
+
+        if (getWidth() == 0 || getHeight() == 0)
+            return;
+
+        if (rippleDrawable != null)
+            rippleDrawable.setBounds(0, 0, getWidth(), getHeight());
     }
 
-    public void setDividerPadding(int dividerPadding) {
-        this.dividerPadding = dividerPadding + extraPaddingBottom;
+
+    // -------------------------------
+    // ripple
+    // -------------------------------
+
+    private RippleDrawable rippleDrawable;
+    private EmptyDrawable emptyBackground = new EmptyDrawable();
+
+    @Override
+    public boolean dispatchTouchEvent(@NonNull MotionEvent event) {
+        if (rippleDrawable != null && event.getAction() == MotionEvent.ACTION_DOWN)
+            rippleDrawable.setHotspot(event.getX(), event.getY());
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public RippleDrawable getRippleDrawable() {
+        return rippleDrawable;
+    }
+
+    public void setRippleDrawable(RippleDrawable newRipple) {
+        if (rippleDrawable != null) {
+            rippleDrawable.setCallback(null);
+            if (rippleDrawable.getStyle() == RippleDrawable.Style.Background)
+                super.setBackgroundDrawable(rippleDrawable.getBackground() == null ? emptyBackground : rippleDrawable.getBackground());
+        }
+
+        if (newRipple != null) {
+            newRipple.setCallback(this);
+            if (newRipple.getStyle() == RippleDrawable.Style.Background) {
+                super.setBackgroundDrawable((Drawable) newRipple);
+            }
+        }
+
+        rippleDrawable = newRipple;
+    }
+
+    @Override
+    protected boolean verifyDrawable(Drawable who) {
+        return super.verifyDrawable(who) || rippleDrawable == who;
+    }
+
+    @Override
+    public void invalidateDrawable(@NonNull Drawable drawable) {
+        super.invalidateDrawable(drawable);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void invalidate(@NonNull Rect dirty) {
+        super.invalidate(dirty);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(dirty);
+    }
+
+    @Override
+    public void invalidate(int l, int t, int r, int b) {
+        super.invalidate(l, t, r, b);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate(l, t, r, b);
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).invalidate();
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds) {
+        super.postInvalidateDelayed(delayMilliseconds);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds);
+    }
+
+    @Override
+    public void postInvalidateDelayed(long delayMilliseconds, int left, int top, int right, int bottom) {
+        super.postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidateDelayed(delayMilliseconds, left, top, right, bottom);
+    }
+
+    @Override
+    public void postInvalidate() {
+        super.postInvalidate();
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidate();
+    }
+
+    @Override
+    public void postInvalidate(int left, int top, int right, int bottom) {
+        super.postInvalidate(left, top, right, bottom);
+        if (getParent() == null || !(getParent() instanceof View))
+            return;
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Borderless)
+            ((View) getParent()).postInvalidate(left, top, right, bottom);
+    }
+
+    @Override
+    public void setBackground(Drawable background) {
+        setBackgroundDrawable(background);
+    }
+
+    @Override
+    public void setBackgroundDrawable(Drawable background) {
+        if (background instanceof RippleDrawable) {
+            setRippleDrawable((RippleDrawable) background);
+            return;
+        }
+
+        if (rippleDrawable != null && rippleDrawable.getStyle() == RippleDrawable.Style.Background) {
+            rippleDrawable.setCallback(null);
+            rippleDrawable = null;
+        }
+        super.setBackgroundDrawable(background == null ? emptyBackground : background);
     }
 
 
@@ -245,13 +552,28 @@ public class EditText extends android.widget.EditText implements TouchMarginView
     private Rect touchMargin;
 
     @Override
-    public void setTouchMargin(Rect rect) {
-        touchMargin = rect;
+    public void setTouchMargin(int left, int top, int right, int bottom) {
+        touchMargin = new Rect(left, top, right, bottom);
     }
 
     @Override
-    public void setTouchMargin(int left, int top, int right, int bottom) {
-        touchMargin = new Rect(left, top, right, bottom);
+    public void setTouchMarginLeft(int margin) {
+        touchMargin.left = margin;
+    }
+
+    @Override
+    public void setTouchMarginTop(int margin) {
+        touchMargin.top = margin;
+    }
+
+    @Override
+    public void setTouchMarginRight(int margin) {
+        touchMargin.right = margin;
+    }
+
+    @Override
+    public void setTouchMarginBottom(int margin) {
+        touchMargin.bottom = margin;
     }
 
     @Override
@@ -259,7 +581,7 @@ public class EditText extends android.widget.EditText implements TouchMarginView
         return touchMargin;
     }
 
-    public void getHitRect(Rect outRect) {
+    public void getHitRect(@NonNull Rect outRect) {
         if (touchMargin == null) {
             super.getHitRect(outRect);
             return;
@@ -284,6 +606,8 @@ public class EditText extends android.widget.EditText implements TouchMarginView
     @Override
     protected void drawableStateChanged() {
         super.drawableStateChanged();
+        if (rippleDrawable != null && rippleDrawable.getStyle() != RippleDrawable.Style.Background)
+            rippleDrawable.setState(getDrawableState());
         if (stateAnimators != null)
             for (StateAnimator animator : stateAnimators)
                 animator.stateChanged(getDrawableState());
@@ -295,19 +619,34 @@ public class EditText extends android.widget.EditText implements TouchMarginView
     // -------------------------------
 
     private AnimUtils.Style inAnim, outAnim;
+    private Animator animator;
 
     public void setVisibility(final int visibility) {
         if (getVisibility() != View.VISIBLE && visibility == View.VISIBLE && inAnim != null) {
-            AnimUtils.animateIn(this, inAnim, null);
+            animator = AnimUtils.animateIn(this, inAnim, new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator a) {
+                    animator = null;
+                }
+            });
             super.setVisibility(visibility);
         } else if (getVisibility() == View.VISIBLE && visibility != View.VISIBLE) {
-            AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
+            animator = AnimUtils.animateOut(this, outAnim, new AnimatorListenerAdapter() {
                 @Override
-                public void onAnimationEnd(Animator animator) {
+                public void onAnimationEnd(Animator a) {
                     EditText.super.setVisibility(visibility);
+                    animator = null;
                 }
             });
         }
+    }
+
+    public void setVisibilityImmediate(final int visibility){
+        super.setVisibility(visibility);
+    }
+
+    public Animator getAnimator() {
+        return animator;
     }
 
     public AnimUtils.Style getOutAnimation() {
@@ -328,18 +667,24 @@ public class EditText extends android.widget.EditText implements TouchMarginView
 
 
     // -------------------------------
-    // roboto
+    // tint
     // -------------------------------
 
-    Roboto.Style style;
+    ColorStateList tint;
 
-    public void setTextStyle(Roboto.Style style) {
-        this.style = style;
-        if (!isInEditMode())
-            super.setTypeface(Roboto.getTypeface(getContext(), style));
+    @Override
+    public void setTint(ColorStateList list) {
+        this.tint = list != null ? list : new ControlFocusedColorStateList(getContext());
+        drawDivider = Color.alpha(tint.getDefaultColor()) != 0;
     }
 
-    public Roboto.Style getTextStyle() {
-        return style;
+    @Override
+    public void setTint(int color) {
+        setTint(ColorStateList.valueOf(color));
+    }
+
+    @Override
+    public ColorStateList getTint() {
+        return tint;
     }
 }
